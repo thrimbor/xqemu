@@ -227,11 +227,11 @@ static void xbox_memory_init(PCMachineState *pcms,
     xbox_flash_init(rom_memory);
 }
 
-uint8_t *load_eeprom(MachineState *machine)
+uint8_t *load_eeprom(MachineState *machine, FILE **file)
 {
     XboxMachineState *xbms = XBOX_MACHINE(machine);
     char *filename;
-    int rc;
+    size_t rc;
     int eeprom_file_size;
 
     uint8_t *eeprom_data = g_malloc(EEPROM_SIZE);
@@ -251,18 +251,18 @@ uint8_t *load_eeprom(MachineState *machine)
             return NULL;
         }
 
-        xbms->eeprom_fd = open(filename, O_RDWR | O_BINARY);
-        if (xbms->eeprom_fd < 0) {
+        *file = fopen(filename, "r+b");
+        if (!(*file)) {
             fprintf(stderr, "qemu: EEPROM file '%s' could not be opened.\n", filename);
             g_free(filename);
             exit(1);
             return NULL;
         }
 
-        rc = read(xbms->eeprom_fd, eeprom_data, EEPROM_SIZE);
+        rc = fread(eeprom_data, 1, EEPROM_SIZE, *file);
         if (rc != EEPROM_SIZE) {
             fprintf(stderr, "qemu: Could not read the full EEPROM file.\n");
-            close(xbms->eeprom_fd);
+            fclose(*file);
             g_free(filename);
             exit(1);
             return NULL;
@@ -271,24 +271,15 @@ uint8_t *load_eeprom(MachineState *machine)
         g_free(filename);
     } else {
         memcpy(eeprom_data, default_eeprom, EEPROM_SIZE);
+        *file = NULL;
     }
     return eeprom_data;
-}
-
-void save_eeprom(uint8_t *eeprom_data)
-{
-    XboxMachineState *xbms = XBOX_MACHINE(qdev_get_machine());
-    if (xbms->eeprom_fd > 0) {
-        lseek(xbms->eeprom_fd, 0, SEEK_SET);
-        write(xbms->eeprom_fd, eeprom_data, EEPROM_SIZE);
-    }
 }
 
 /* PC hardware initialisation */
 static void xbox_init(MachineState *machine)
 {
-    uint8_t *eeprom_data = load_eeprom(machine);
-    xbox_init_common(machine, eeprom_data, NULL, NULL);
+    xbox_init_common(machine, default_eeprom, NULL, NULL);
 }
 
 void xbox_init_common(MachineState *machine,
@@ -386,9 +377,11 @@ void xbox_init_common(MachineState *machine,
     }
 
     /* smbus devices */
+    FILE *file;
+    uint8_t *eeprom_data = load_eeprom(machine, &file);
     uint8_t *eeprom_buf = g_malloc0(EEPROM_SIZE);
-    memcpy(eeprom_buf, eeprom, EEPROM_SIZE);
-    smbus_eeprom_init_one(smbus, 0x54, eeprom_buf);
+    memcpy(eeprom_buf, eeprom_data, EEPROM_SIZE);
+    smbus_eeprom_init_one(smbus, 0x54, eeprom_buf, file);
 
     smbus_xbox_smc_init(smbus, 0x10);
     smbus_cx25871_init(smbus, 0x45);

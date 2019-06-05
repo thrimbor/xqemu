@@ -26,8 +26,7 @@
 
 #define MAX_IDE_BUS 2
 
-uint8_t *load_eeprom(MachineState *machine);
-void save_eeprom(uint8_t *eeprom_data);
+uint8_t *load_eeprom(MachineState *machine, FILE **file);
 
 void xbox_init_common(MachineState *machine,
                       const uint8_t *eeprom,
@@ -45,7 +44,6 @@ void xbox_init_common(MachineState *machine,
 typedef struct XboxMachineState {
     /*< private >*/
     PCMachineState parent_obj;
-    int eeprom_fd;
 
     /*< public >*/
     char *bootrom;

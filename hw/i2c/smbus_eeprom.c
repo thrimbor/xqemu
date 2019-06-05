@@ -30,8 +30,12 @@
 
 //#define DEBUG
 
+#define SMBUS_EEPROM(obj)                  \
+    OBJECT_CHECK(SMBusEEPROMDevice, (obj), "smbus-eeprom")
+
 typedef struct SMBusEEPROMDevice {
     SMBusDevice smbusdev;
+    FILE *file;
     void *data;
     uint8_t offset;
 } SMBusEEPROMDevice;
@@ -86,7 +90,10 @@ static void eeprom_write_data(SMBusDevice *dev, uint8_t cmd, uint8_t *buf, int l
     if (len)
         memcpy(eeprom->data, buf + n, len);
 
-    save_eeprom(eeprom->data);
+    if (eeprom->file) {
+        fseek(eeprom->file, 0, SEEK_SET);
+        fwrite(eeprom->data, 1, 256, eeprom->file);
+    }
 }
 
 static uint8_t eeprom_read_data(SMBusDevice *dev, uint8_t cmd, int n)
@@ -128,11 +135,20 @@ static void smbus_eeprom_class_initfn(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
+static void smbus_eeprom_instance_finalize(Object *obj)
+{
+    SMBusEEPROMDevice *eeprom = (SMBusEEPROMDevice *) obj;
+    if (eeprom->file) {
+        fclose(eeprom->file);
+    }
+}
+
 static const TypeInfo smbus_eeprom_info = {
     .name          = "smbus-eeprom",
     .parent        = TYPE_SMBUS_DEVICE,
     .instance_size = sizeof(SMBusEEPROMDevice),
     .class_init    = smbus_eeprom_class_initfn,
+    .instance_finalize = smbus_eeprom_instance_finalize
 };
 
 static void smbus_eeprom_register_types(void)
@@ -142,13 +158,15 @@ static void smbus_eeprom_register_types(void)
 
 type_init(smbus_eeprom_register_types)
 
-void smbus_eeprom_init_one(I2CBus *smbus, uint8_t address, uint8_t *eeprom_buf)
+void smbus_eeprom_init_one(I2CBus *smbus, uint8_t address, uint8_t *eeprom_buf, FILE *file)
 {
     DeviceState *dev;
 
     dev = qdev_create((BusState *) smbus, "smbus-eeprom");
     qdev_prop_set_uint8(dev, "address", address);
     qdev_prop_set_ptr(dev, "data", eeprom_buf);
+    SMBUS_EEPROM(dev)->file = file;
+    printf("XXX: init_one, file: %x\n", file);
     qdev_init_nofail(dev);
 }
 
@@ -162,6 +180,6 @@ void smbus_eeprom_init(I2CBus *smbus, int nb_eeprom,
     }
 
     for (i = 0; i < nb_eeprom; i++) {
-        smbus_eeprom_init_one(smbus, 0x50 + i, eeprom_buf + (i * 256));
+        smbus_eeprom_init_one(smbus, 0x50 + i, eeprom_buf + (i * 256), NULL);
     }
 }
